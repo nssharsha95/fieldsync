@@ -18,7 +18,6 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap');
 
 html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
-
 .main { background: #f8fffe; }
 
 .header-block {
@@ -31,7 +30,6 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     align-items: center;
     gap: 12px;
 }
-
 .logo-text {
     font-family: 'Space Mono', monospace;
     font-size: 22px;
@@ -39,7 +37,6 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     color: white;
     margin: 0;
 }
-
 .logo-sub {
     font-size: 12px;
     color: #74c69d;
@@ -49,7 +46,6 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     border-radius: 20px;
     margin-left: 8px;
 }
-
 .section-label {
     font-family: 'Space Mono', monospace;
     font-size: 11px;
@@ -59,13 +55,11 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     color: #1b4332;
     margin-bottom: 8px;
 }
-
 .stat-row {
     display: flex;
     gap: 12px;
     margin: 12px 0;
 }
-
 .stat-card {
     flex: 1;
     background: #f0faf3;
@@ -74,21 +68,18 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     padding: 10px;
     text-align: center;
 }
-
 .stat-val {
     font-family: 'Space Mono', monospace;
     font-size: 20px;
     font-weight: 700;
     color: #1b4332;
 }
-
 .stat-key {
     font-size: 10px;
     color: #9ca3af;
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
-
 .correction-row {
     background: #fffbeb;
     border: 1px solid #fcd34d;
@@ -99,7 +90,6 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     font-size: 13px;
     font-family: 'Space Mono', monospace;
 }
-
 .upload-note {
     background: #f0faf3;
     border: 1px dashed #a7f3d0;
@@ -109,21 +99,54 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     color: #6b7280;
     margin-top: 12px;
 }
-
 .stTextArea textarea {
     font-family: 'Space Mono', monospace !important;
     font-size: 11px !important;
     background: #f0faf3 !important;
 }
-
-div[data-testid="stButton"] > button {
-    font-family: 'DM Sans', sans-serif;
-    font-weight: 600;
+div[data-testid="stButton"] > button[kind="primary"] {
+    background-color: #1b4332 !important;
+    border-color: #1b4332 !important;
+    color: white !important;
+    font-weight: 600 !important;
+}
+div[data-testid="stButton"] > button[kind="primary"]:hover {
+    background-color: #2d6a4f !important;
+}
+div[data-testid="stButton"] > button[kind="secondary"] {
+    background-color: white !important;
+    border: 1.5px dashed #fca5a5 !important;
+    color: #dc2626 !important;
+    font-weight: 600 !important;
+}
+div[data-testid="stButton"] > button[kind="secondary"]:hover {
+    background-color: #fef2f2 !important;
+    border-style: solid !important;
+}
+div[data-testid="stDownloadButton"] > button {
+    background-color: #2d6a4f !important;
+    border-color: #2d6a4f !important;
+    color: white !important;
+    font-weight: 600 !important;
+    width: 100%;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# ─── COORDINATE PARSER ────────────────────────────────────────────────────────
+# ─── SESSION STATE INIT ───────────────────────────────────────────────────────
+for key, default in {
+    "kml_data": None,
+    "outer_coords": None,
+    "inner_coords": None,
+    "corrections": [],
+    "stats": {},
+    "filename": "field.kml",
+    "field_name": "Farm"
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
+
+# ─── PARSER ───────────────────────────────────────────────────────────────────
 def parse_coordinates(raw: str):
     corrections = []
     if not raw or not raw.strip():
@@ -136,24 +159,16 @@ def parse_coordinates(raw: str):
         line = line.strip()
         if not line:
             continue
-        # Skip header rows
         if re.match(r'^[a-zA-Z\s]+$', line):
             continue
 
-        # Fix comma as decimal: "35,4788058" → "35.4788058"
         def fix_comma(m):
             original = m.group(0)
             fixed = original.replace(',', '.')
-            corrections.append({
-                'original': original,
-                'corrected': fixed,
-                'error_type': 'comma_as_decimal'
-            })
+            corrections.append({'original': original, 'corrected': fixed, 'error_type': 'comma as decimal'})
             return fixed
+        line = re.sub(r'\b(\d+),(\d+)\b', fix_comma, line)
 
-        line = re.sub(r'\d+,\d+', fix_comma, line)
-
-        # Split into tokens
         tokens = line.split()
         merged = []
         i = 0
@@ -161,46 +176,37 @@ def parse_coordinates(raw: str):
             cur = tokens[i]
             nxt = tokens[i + 1] if i + 1 < len(tokens) else None
 
-            # Case 1: "35." + "478103" → "35.478103"
             if re.match(r'^\d+\.$', cur) and nxt and re.match(r'^\d+$', nxt):
-                original = f"{cur} {nxt}"
                 fixed = f"{cur}{nxt}"
-                corrections.append({'original': original, 'corrected': fixed, 'error_type': 'space_in_number'})
+                corrections.append({'original': f"{cur} {nxt}", 'corrected': fixed, 'error_type': 'space in number'})
                 merged.append(fixed)
                 i += 2
-
-            # Case 2: "35.47" + "47687" → "35.4747687" (next has 4+ digits, can't be standalone coord)
             elif re.match(r'^\d+\.\d+$', cur) and nxt and re.match(r'^\d{4,}$', nxt):
-                original = f"{cur} {nxt}"
                 fixed = f"{cur}{nxt}"
-                corrections.append({'original': original, 'corrected': fixed, 'error_type': 'space_in_number'})
+                corrections.append({'original': f"{cur} {nxt}", 'corrected': fixed, 'error_type': 'space in number'})
                 merged.append(fixed)
                 i += 2
-
             else:
                 merged.append(cur)
                 i += 1
 
         for token in merged:
             try:
-                val = float(token)
-                numbers.append(val)
+                numbers.append(float(token))
             except ValueError:
                 pass
 
-    # Pair into (lat, lon)
     pairs = []
     for i in range(0, len(numbers) - 1, 2):
         pairs.append((numbers[i], numbers[i + 1]))
 
     return pairs, corrections
 
-
-# ─── VALIDATION ───────────────────────────────────────────────────────────────
+# ─── HELPERS ──────────────────────────────────────────────────────────────────
 def validate_pairs(pairs, label):
     errors = []
     if len(pairs) < 3:
-        errors.append(f"{label} needs at least 3 coordinate points (got {len(pairs)}).")
+        errors.append(f"{label} needs at least 3 points (got {len(pairs)}).")
     for i, (lat, lon) in enumerate(pairs):
         if lat < -90 or lat > 90:
             errors.append(f"{label} row {i+1}: latitude {lat} out of range.")
@@ -208,8 +214,6 @@ def validate_pairs(pairs, label):
             errors.append(f"{label} row {i+1}: longitude {lon} out of range.")
     return errors
 
-
-# ─── KML GENERATOR ────────────────────────────────────────────────────────────
 def close_ring(pairs):
     if not pairs:
         return pairs
@@ -217,14 +221,11 @@ def close_ring(pairs):
         return pairs + [pairs[0]]
     return pairs
 
-
 def pairs_to_kml_coords(pairs):
     return '\n'.join(f'              {lon},{lat},0' for lat, lon in pairs)
 
-
 def generate_kml(field_name, outer_pairs, inner_pairs):
     outer_closed = close_ring(outer_pairs)
-
     inner_block = ''
     if inner_pairs:
         inner_closed = close_ring(inner_pairs)
@@ -261,41 +262,23 @@ def generate_kml(field_name, outer_pairs, inner_pairs):
   </Document>
 </kml>"""
 
-
-# ─── MAP BUILDER ──────────────────────────────────────────────────────────────
 def build_map(outer_pairs, inner_pairs):
     center_lat = sum(p[0] for p in outer_pairs) / len(outer_pairs)
     center_lon = sum(p[1] for p in outer_pairs) / len(outer_pairs)
-
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=14,
-                   tiles='OpenStreetMap')
-
-    outer_latlon = [(lat, lon) for lat, lon in outer_pairs]
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=14, tiles='OpenStreetMap')
     folium.Polygon(
-        locations=outer_latlon,
-        color='#2d6a4f',
-        weight=2,
-        fill=True,
-        fill_color='#40916c',
-        fill_opacity=0.25,
-        tooltip='Outer Boundary'
+        locations=[(lat, lon) for lat, lon in outer_pairs],
+        color='#2d6a4f', weight=2, fill=True,
+        fill_color='#40916c', fill_opacity=0.25, tooltip='Outer Boundary'
     ).add_to(m)
-
     if inner_pairs:
-        inner_latlon = [(lat, lon) for lat, lon in inner_pairs]
         folium.Polygon(
-            locations=inner_latlon,
-            color='#f59e0b',
-            weight=2,
-            fill=True,
-            fill_color='#fcd34d',
-            fill_opacity=0.35,
-            tooltip='Inner Boundary (Hole)'
+            locations=[(lat, lon) for lat, lon in inner_pairs],
+            color='#f59e0b', weight=2, fill=True,
+            fill_color='#fcd34d', fill_opacity=0.35, tooltip='Inner Boundary (Hole)'
         ).add_to(m)
-
-    m.fit_bounds(outer_latlon)
+    m.fit_bounds([(lat, lon) for lat, lon in outer_pairs])
     return m
-
 
 # ─── HEADER ───────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -313,12 +296,11 @@ left, right = st.columns([1, 1], gap="large")
 with left:
     st.markdown('<div class="section-label">Input</div>', unsafe_allow_html=True)
 
-    field_name = st.text_input("Field Name", value="Farm", placeholder="e.g. Farm A")
+    field_name = st.text_input("Field Name", value=st.session_state.field_name, placeholder="e.g. Farm A")
 
     st.markdown("**🟢 Outer Boundary** — field perimeter")
     outer_raw = st.text_area(
-        label="outer_coords",
-        label_visibility="collapsed",
+        label="outer_coords", label_visibility="collapsed",
         height=220,
         placeholder="Paste lat/lon pairs here...\n0.4087957  35.478962\n0.4084061  35.4782717\n...",
         key="outer"
@@ -326,8 +308,7 @@ with left:
 
     st.markdown("**🟡 Inner Boundary** — hole / excluded area *(optional)*")
     inner_raw = st.text_area(
-        label="inner_coords",
-        label_visibility="collapsed",
+        label="inner_coords", label_visibility="collapsed",
         height=160,
         placeholder="Paste lat/lon pairs here (optional)...\n0.4061545  35.4725321\n...",
         key="inner"
@@ -335,21 +316,16 @@ with left:
 
     generate = st.button("⚡ Generate KML", type="primary", use_container_width=True)
 
-# ─── RIGHT: OUTPUT ────────────────────────────────────────────────────────────
-with right:
-    st.markdown('<div class="section-label">Output</div>', unsafe_allow_html=True)
-
-    if not generate:
-        st.info("Paste coordinates on the left and click **⚡ Generate KML** to see your field here.")
-
+    # ── GENERATE LOGIC (inside left column so inputs are in scope) ────────────
     if generate:
         if not outer_raw.strip():
             st.error("⚠ Outer boundary coordinates are required.")
         else:
             outer_pairs, outer_corrections = parse_coordinates(outer_raw)
-            inner_pairs, inner_corrections = parse_coordinates(inner_raw) if inner_raw.strip() else ([], [])
+            inner_pairs, inner_corrections = (
+                parse_coordinates(inner_raw) if inner_raw.strip() else ([], [])
+            )
             all_corrections = outer_corrections + inner_corrections
-
             validation_errors = validate_pairs(outer_pairs, "Outer boundary")
             if inner_pairs:
                 validation_errors += validate_pairs(inner_pairs, "Inner boundary")
@@ -358,69 +334,109 @@ with right:
                 for e in validation_errors:
                     st.error(f"⚠ {e}")
             else:
-                # Stats
-                err_color = "🟡" if all_corrections else "🟢"
-                st.markdown(f"""
-                <div class="stat-row">
-                    <div class="stat-card">
-                        <div class="stat-val">{len(outer_pairs)}</div>
-                        <div class="stat-key">outer pts</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-val">{len(inner_pairs) if inner_pairs else '—'}</div>
-                        <div class="stat-key">inner pts</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-val">{err_color} {len(all_corrections)}</div>
-                        <div class="stat-key">errors fixed</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-val">✓</div>
-                        <div class="stat-key">valid KML</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                # Corrections report
-                if all_corrections:
-                    st.warning(f"⚠ {len(all_corrections)} error(s) detected and auto-corrected:")
-                    for c in all_corrections:
-                        st.markdown(f"""
-                        <div class="correction-row">
-                            <span style="color:#92400e;font-size:10px;text-transform:uppercase">{c['error_type'].replace('_',' ')}</span>
-                            &nbsp;&nbsp;
-                            <span style="color:#dc2626">"{c['original']}"</span>
-                            &nbsp;→&nbsp;
-                            <span style="color:#2d7d32">"{c['corrected']}"</span>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                # Map preview
-                st.markdown("**Map Preview**")
-                field_map = build_map(outer_pairs, inner_pairs)
-                st_folium(field_map, height=300, use_container_width=True)
-
-                # Generate KML
                 kml_content = generate_kml(field_name or "Field", outer_pairs, inner_pairs)
                 today = date.today().isoformat()
                 filename = f"{(field_name or 'Field').replace(' ', '_')}_{today}.kml"
 
-                # Download button
-                st.download_button(
-                    label=f"⬇ Download {filename}",
-                    data=kml_content,
-                    file_name=filename,
-                    mime="application/vnd.google-earth.kml+xml",
-                    use_container_width=True,
-                    type="primary"
-                )
+                # ── Save everything to session state ──
+                st.session_state.kml_data = kml_content
+                st.session_state.outer_coords = outer_pairs
+                st.session_state.inner_coords = inner_pairs
+                st.session_state.corrections = all_corrections
+                st.session_state.filename = filename
+                st.session_state.field_name = field_name
+                st.session_state.stats = {
+                    'outer_points': len(outer_pairs),
+                    'inner_points': len(inner_pairs) if inner_pairs else 0,
+                    'errors_fixed': len(all_corrections)
+                }
 
-                # KML preview expander
-                with st.expander("View KML Source"):
-                    st.code(kml_content, language="xml")
+# ─── RIGHT: OUTPUT ────────────────────────────────────────────────────────────
+with right:
+    st.markdown('<div class="section-label">Output</div>', unsafe_allow_html=True)
 
-                st.markdown("""
-                <div class="upload-note">
-                    ☁ Ready to upload &nbsp;·&nbsp; xFarm → Map → New field → Import from file
+    if not st.session_state.kml_data:
+        st.markdown("""
+        <div style="text-align:center; padding:60px 20px; color:#9ca3af;">
+            <div style="font-size:52px; margin-bottom:16px;">◈</div>
+            <div style="font-size:16px; font-weight:600; color:#374151;">Your field will appear here</div>
+            <div style="font-size:13px; margin-top:8px;">Paste coordinates and click ⚡ Generate KML</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    else:
+        stats = st.session_state.stats
+        err_icon = "🟡" if stats['errors_fixed'] > 0 else "🟢"
+
+        # Stats
+        st.markdown(f"""
+        <div class="stat-row">
+            <div class="stat-card">
+                <div class="stat-val">{stats['outer_points']}</div>
+                <div class="stat-key">outer pts</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-val">{stats['inner_points'] if stats['inner_points'] else '—'}</div>
+                <div class="stat-key">inner pts</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-val">{err_icon} {stats['errors_fixed']}</div>
+                <div class="stat-key">errors fixed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-val">✓</div>
+                <div class="stat-key">valid KML</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Corrections
+        if st.session_state.corrections:
+            st.warning(f"⚠ {len(st.session_state.corrections)} error(s) detected and auto-corrected:")
+            for c in st.session_state.corrections:
+                st.markdown(f"""
+                <div class="correction-row">
+                    <span style="color:#92400e;font-size:10px;text-transform:uppercase;font-weight:700">{c['error_type']}</span>
+                    &nbsp;&nbsp;
+                    <span style="color:#dc2626">"{c['original']}"</span>
+                    &nbsp;→&nbsp;
+                    <span style="color:#2d7d32">"{c['corrected']}"</span>
                 </div>
                 """, unsafe_allow_html=True)
+        else:
+            st.success("✅ No formatting errors — data was clean.")
+
+        # Map
+        st.markdown("**Map Preview**")
+        field_map = build_map(st.session_state.outer_coords, st.session_state.inner_coords)
+        st_folium(field_map, height=300, use_container_width=True)
+
+        # Download
+        st.download_button(
+            label=f"⬇ Download {st.session_state.filename}",
+            data=st.session_state.kml_data,
+            file_name=st.session_state.filename,
+            mime="application/vnd.google-earth.kml+xml",
+            use_container_width=True
+        )
+
+        # Reset
+        if st.button("↺ Start Over", type="secondary", use_container_width=True):
+            st.session_state.kml_data = None
+            st.session_state.outer_coords = None
+            st.session_state.inner_coords = None
+            st.session_state.corrections = []
+            st.session_state.stats = {}
+            st.session_state.filename = "field.kml"
+            st.session_state.field_name = "Farm"
+            st.rerun()
+
+        # KML source
+        with st.expander("View KML Source"):
+            st.code(st.session_state.kml_data, language="xml")
+
+        st.markdown("""
+        <div class="upload-note">
+            ☁ Ready to upload &nbsp;·&nbsp; xFarm → Map → New field → Import from file
+        </div>
+        """, unsafe_allow_html=True)
