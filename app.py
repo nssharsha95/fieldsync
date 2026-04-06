@@ -280,11 +280,6 @@ def build_map(outer_pairs, inner_pairs):
     m.fit_bounds([(lat, lon) for lat, lon in outer_pairs])
     return m
 
-def read_uploaded_file(uploaded_file):
-    if uploaded_file is not None:
-        return uploaded_file.read().decode("utf-8")
-    return None
-
 # ─── HEADER ───────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="header-block">
@@ -306,54 +301,54 @@ with left:
     # ── OUTER BOUNDARY ────────────────────────────────────────────────────────
     st.markdown("**🟢 Outer Boundary** — field perimeter")
 
-    outer_file = st.file_uploader(
-        "Upload file (.txt or .csv)",
-        type=["txt", "csv"],
-        key="outer_file",
-        help="Upload a text or CSV file with lat/lon pairs"
-    )
+    outer_paste_tab, outer_upload_tab = st.tabs(["✏️ Paste", "📂 Upload File"])
 
-    outer_file_content = read_uploaded_file(outer_file)
+    outer_input = ""
+    with outer_paste_tab:
+        outer_raw = st.text_area(
+            label="outer_coords",
+            label_visibility="collapsed",
+            height=200,
+            placeholder="Paste lat/lon pairs here...\n0.4087957  35.478962\n0.4084061  35.4782717\n...",
+            key="outer"
+        )
+        outer_input = outer_raw
 
-    if outer_file_content:
-        st.caption(f"✅ File loaded: {outer_file.name} — you can also paste below to override")
-
-    outer_raw = st.text_area(
-        label="outer_coords",
-        label_visibility="collapsed",
-        height=180,
-        placeholder="Or paste lat/lon pairs here...\n0.4087957  35.478962\n0.4084061  35.4782717\n...",
-        key="outer"
-    )
-
-    # File takes priority; fall back to pasted text
-    outer_input = outer_file_content if outer_file_content and not outer_raw.strip() else outer_raw
+    with outer_upload_tab:
+        outer_file = st.file_uploader(
+            "Choose a .txt or .csv file",
+            type=["txt", "csv"],
+            key="outer_file"
+        )
+        if outer_file:
+            outer_input = outer_file.read().decode("utf-8")
+            st.caption(f"✅ Loaded: **{outer_file.name}** — {len(outer_input.strip().splitlines())} lines")
 
     # ── INNER BOUNDARY ────────────────────────────────────────────────────────
     st.markdown("**🟡 Inner Boundary** — hole / excluded area *(optional)*")
 
-    inner_file = st.file_uploader(
-        "Upload file (.txt or .csv)",
-        type=["txt", "csv"],
-        key="inner_file",
-        help="Upload a text or CSV file with lat/lon pairs"
-    )
+    inner_paste_tab, inner_upload_tab = st.tabs(["✏️ Paste", "📂 Upload File"])
 
-    inner_file_content = read_uploaded_file(inner_file)
+    inner_input = ""
+    with inner_paste_tab:
+        inner_raw = st.text_area(
+            label="inner_coords",
+            label_visibility="collapsed",
+            height=140,
+            placeholder="Paste lat/lon pairs here (optional)...\n0.4061545  35.4725321\n...",
+            key="inner"
+        )
+        inner_input = inner_raw
 
-    if inner_file_content:
-        st.caption(f"✅ File loaded: {inner_file.name} — you can also paste below to override")
-
-    inner_raw = st.text_area(
-        label="inner_coords",
-        label_visibility="collapsed",
-        height=140,
-        placeholder="Or paste lat/lon pairs here (optional)...\n0.4061545  35.4725321\n...",
-        key="inner"
-    )
-
-    # File takes priority; fall back to pasted text
-    inner_input = inner_file_content if inner_file_content and not inner_raw.strip() else inner_raw
+    with inner_upload_tab:
+        inner_file = st.file_uploader(
+            "Choose a .txt or .csv file",
+            type=["txt", "csv"],
+            key="inner_file"
+        )
+        if inner_file:
+            inner_input = inner_file.read().decode("utf-8")
+            st.caption(f"✅ Loaded: **{inner_file.name}** — {len(inner_input.strip().splitlines())} lines")
 
     generate = st.button("⚡ Generate KML", type="primary", use_container_width=True)
 
