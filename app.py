@@ -241,13 +241,13 @@ def generate_kml(field_name, outer_pairs, inner_pairs):
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
-    <name>{field_name}</name>
+    <n>{field_name}</n>
     <Style id="fieldStyle">
       <LineStyle><color>ff2d7d32</color><width>2</width></LineStyle>
       <PolyStyle><color>402d7d32</color></PolyStyle>
     </Style>
     <Placemark>
-      <name>{field_name}</name>
+      <n>{field_name}</n>
       <styleUrl>#fieldStyle</styleUrl>
       <Polygon>
         <outerBoundaryIs>
@@ -280,6 +280,11 @@ def build_map(outer_pairs, inner_pairs):
     m.fit_bounds([(lat, lon) for lat, lon in outer_pairs])
     return m
 
+def read_uploaded_file(uploaded_file):
+    if uploaded_file is not None:
+        return uploaded_file.read().decode("utf-8")
+    return None
+
 # ─── HEADER ───────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="header-block">
@@ -298,32 +303,68 @@ with left:
 
     field_name = st.text_input("Field Name", value=st.session_state.field_name, placeholder="e.g. Farm A")
 
+    # ── OUTER BOUNDARY ────────────────────────────────────────────────────────
     st.markdown("**🟢 Outer Boundary** — field perimeter")
+
+    outer_file = st.file_uploader(
+        "Upload file (.txt or .csv)",
+        type=["txt", "csv"],
+        key="outer_file",
+        help="Upload a text or CSV file with lat/lon pairs"
+    )
+
+    outer_file_content = read_uploaded_file(outer_file)
+
+    if outer_file_content:
+        st.caption(f"✅ File loaded: {outer_file.name} — you can also paste below to override")
+
     outer_raw = st.text_area(
-        label="outer_coords", label_visibility="collapsed",
-        height=220,
-        placeholder="Paste lat/lon pairs here...\n0.4087957  35.478962\n0.4084061  35.4782717\n...",
+        label="outer_coords",
+        label_visibility="collapsed",
+        height=180,
+        placeholder="Or paste lat/lon pairs here...\n0.4087957  35.478962\n0.4084061  35.4782717\n...",
         key="outer"
     )
 
+    # File takes priority; fall back to pasted text
+    outer_input = outer_file_content if outer_file_content and not outer_raw.strip() else outer_raw
+
+    # ── INNER BOUNDARY ────────────────────────────────────────────────────────
     st.markdown("**🟡 Inner Boundary** — hole / excluded area *(optional)*")
+
+    inner_file = st.file_uploader(
+        "Upload file (.txt or .csv)",
+        type=["txt", "csv"],
+        key="inner_file",
+        help="Upload a text or CSV file with lat/lon pairs"
+    )
+
+    inner_file_content = read_uploaded_file(inner_file)
+
+    if inner_file_content:
+        st.caption(f"✅ File loaded: {inner_file.name} — you can also paste below to override")
+
     inner_raw = st.text_area(
-        label="inner_coords", label_visibility="collapsed",
-        height=160,
-        placeholder="Paste lat/lon pairs here (optional)...\n0.4061545  35.4725321\n...",
+        label="inner_coords",
+        label_visibility="collapsed",
+        height=140,
+        placeholder="Or paste lat/lon pairs here (optional)...\n0.4061545  35.4725321\n...",
         key="inner"
     )
 
+    # File takes priority; fall back to pasted text
+    inner_input = inner_file_content if inner_file_content and not inner_raw.strip() else inner_raw
+
     generate = st.button("⚡ Generate KML", type="primary", use_container_width=True)
 
-    # ── GENERATE LOGIC (inside left column so inputs are in scope) ────────────
+    # ── GENERATE LOGIC ────────────────────────────────────────────────────────
     if generate:
-        if not outer_raw.strip():
-            st.error("⚠ Outer boundary coordinates are required.")
+        if not outer_input or not outer_input.strip():
+            st.error("⚠ Outer boundary coordinates are required — paste or upload a file.")
         else:
-            outer_pairs, outer_corrections = parse_coordinates(outer_raw)
+            outer_pairs, outer_corrections = parse_coordinates(outer_input)
             inner_pairs, inner_corrections = (
-                parse_coordinates(inner_raw) if inner_raw.strip() else ([], [])
+                parse_coordinates(inner_input) if inner_input and inner_input.strip() else ([], [])
             )
             all_corrections = outer_corrections + inner_corrections
             validation_errors = validate_pairs(outer_pairs, "Outer boundary")
@@ -338,7 +379,6 @@ with left:
                 today = date.today().isoformat()
                 filename = f"{(field_name or 'Field').replace(' ', '_')}_{today}.kml"
 
-                # ── Save everything to session state ──
                 st.session_state.kml_data = kml_content
                 st.session_state.outer_coords = outer_pairs
                 st.session_state.inner_coords = inner_pairs
@@ -360,7 +400,7 @@ with right:
         <div style="text-align:center; padding:60px 20px; color:#9ca3af;">
             <div style="font-size:52px; margin-bottom:16px;">◈</div>
             <div style="font-size:16px; font-weight:600; color:#374151;">Your field will appear here</div>
-            <div style="font-size:13px; margin-top:8px;">Paste coordinates and click ⚡ Generate KML</div>
+            <div style="font-size:13px; margin-top:8px;">Paste or upload coordinates, then click ⚡ Generate KML</div>
         </div>
         """, unsafe_allow_html=True)
 
