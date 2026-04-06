@@ -1,6 +1,6 @@
 # FieldSync — Streamlit Version
 
-Convert raw GPS coordinates into a valid xFarm-ready KML file.  
+Convert raw GPS coordinates into a valid KML file.  
 Auto-corrects formatting errors. Map preview included.
 
 ---
